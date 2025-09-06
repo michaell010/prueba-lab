@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title> Inventario Panadería</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    .form-container {
+  background: white;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+  margin: 20px auto;
+  max-width: 500px;
+}
+.btn-danger {
+  background: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  margin-top: 10px;
+}
+
+.btn-danger:hover {
+  background: #c82333;
+}
+
+
+.form-container h2 {
+  margin-bottom: 15px;
+  text-align: center;
+}
+
+.form-container input {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  margin: 8px 0;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+}
+
+    body {
+      font-family: 'Segoe UI', Tahoma, sans-serif;
+      background: linear-gradient(135deg, #9c7762, #d6d5b7fa);
+      min-height: 100vh;
+      padding: 20px;
+      color: #333;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+      color: white;
+    }
+    .header h1 { font-size: 2.5rem; margin-bottom: 10px; }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+    .stat-card {
+      background: white;
+      border-radius: 15px;
+      padding: 20px;
+      text-align: center;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    }
+    .stat-number { font-size: 1.8rem; font-weight: bold; color: #667eea; }
+    .actions { text-align: center; margin-bottom: 30px; }
+    .btn {
+      padding: 12px 20px;
+      border: none;
+      border-radius: 10px;
+      font-weight: bold;
+      cursor: pointer;
+      margin: 5px;
+    }
+    .btn-primary { background: #667eea; color: white; }
+    .btn-primary:hover { background: #5a6fd8; }
+    .inventory-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+    }
+    .item-card {
+      background: white;
+      border-radius: 15px;
+      padding: 20px;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+      transition: 0.3s;
+    }
+    .item-card:hover { transform: translateY(-5px); }
+    .item-name { font-size: 1.3rem; font-weight: bold; margin-bottom: 10px; }
+    .item-details { color: #555; margin-bottom: 10px; }
+    .price { font-weight: bold; color: #28a745; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1> Sistema de Inventario - Panadería</h1>
+    <p>Gestión integral de productos terminados</p>
+  </div>
+
+  <div class="stats">
+    <div class="stat-card">
+      <div class="stat-number" id="totalProductos">-</div>
+      Productos
+    </div>
+    <div class="stat-card">
+      <div class="stat-number" id="stockBajo">-</div>
+      Stock Bajo
+    </div>
+    <div class="stat-card">
+      <div class="stat-number" id="valorTotal">$0</div>
+      Valor Total
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary" onclick="loadData()">🔄 Actualizar</button>
+  </div>
+<div class="form-container">
+  <h2>Agregar Producto</h2>
+  <form id="productForm">
+    <input type="text" id="nombre" placeholder="Nombre del producto" required>
+    <input type="number" id="cantidad" placeholder="Cantidad" required>
+    <input type="date" id="fecha_vencimiento" required>
+    <input type="number" id="precio_unitario" placeholder="Precio unitario" required>
+    <button type="submit" class="btn btn-primary">Guardar</button>
+  </form>
+</div>
+
+<script>
+document.getElementById("productForm").addEventListener("submit", async function(e) {
+    e.preventDefault();
+
+    const producto = {
+        nombre: document.getElementById("nombre").value,
+        cantidad: parseInt(document.getElementById("cantidad").value),
+        fecha_vencimiento: document.getElementById("fecha_vencimiento").value,
+        precio_unitario: parseFloat(document.getElementById("precio_unitario").value)
+    };
+
+    try {
+        const res = await fetch(`${API_BASE}/productos`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(producto)
+        });
+
+        if (!res.ok) throw new Error("Error al guardar producto");
+
+        // recargar inventario
+        loadData();
+        document.getElementById("productForm").reset();
+        alert("✅ Producto agregado con éxito!");
+    } catch (err) {
+        console.error("Error:", err);
+        alert("❌ No se pudo guardar el producto.");
+    }
+});
+</script>
+
+  <div id="inventory-container" class="inventory-grid"></div>
+
+<script>
+
+const API_BASE = "http://127.0.0.1:8000/api/v1";
+
+let currentTab = "productos"; 
+let currentData = [];
+let editingId = null;
+let stockItemId = null;
+
+document.addEventListener("DOMContentLoaded", function() {
+    loadData();
+
+});
+
+
+async function loadData() {
+    try {
+        const res = await fetch(`${API_BASE}/${currentTab}`);
+        const data = await res.json();
+
+        renderInventory(data);
+        updateStats(data);
+
+      } catch (error) {
+        console.error("Error al cargar productos:", error);
+      }
+    }
+
+    function renderInventory(items) {
+      const container = document.getElementById("inventory-container");
+      container.innerHTML = "";
+      items.forEach(item => {
+        const card = document.createElement("div");
+        card.className = "item-card";
+       card.innerHTML = `
+          <div class="item-name">${item.nombre}</div>
+          <div class="item-details">Cantidad: ${item.cantidad}</div>
+          <div class="item-details">Vence: ${item.fecha_vencimiento}</div>
+          <div class="price">$${parseFloat(item.precio_unitario).toLocaleString()}</div>
+          <button class="btn btn-danger" onclick="deleteItem(${item.id})">🗑 Eliminar</button>
+        `;
+
+
+        container.appendChild(card);
+      });
+    }
+
+    function updateStats(items) {
+      document.getElementById("totalProductos").textContent = items.length;
+
+      const valorTotal = items.reduce((acc, item) => acc + (parseFloat(item.precio_unitario) * item.cantidad), 0);
+      document.getElementById("valorTotal").textContent = "$" + valorTotal.toLocaleString();
+
+      const stockBajo = items.filter(item => item.cantidad < 5).length;
+      document.getElementById("stockBajo").textContent = stockBajo;
+    }
+
+    // cargar al inicio
+    loadData();
+async function deleteItem(id) {
+  if (!confirm("¿Seguro que quieres eliminar este producto?")) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/${currentTab}/${id}`, {
+      method: "DELETE"
+    });
+
+    if (!res.ok) throw new Error("Error al eliminar");
+
+    alert("✅ Producto eliminado con éxito");
+    loadData(); // recargar inventario
+  } catch (error) {
+    console.error("Error:", error);
+    alert("❌ No se pudo eliminar el producto");
+  }
+}
+
+  </script>
+</body>
+</html>
+ 
