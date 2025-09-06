@@ -1,82 +1,69 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Models;
 
-use App\Models\Producto;
-use Illuminate\Http\Request;
+use Illuminate\Database\Eloquent\Model;
+use App\Models\MovimientoInventario; 
 
-class ProductoController extends Controller
+class Producto extends Model
 {
-    public function index()
+    protected $table = 'productos_terminados';
+    protected $fillable = [
+    'nombre',
+    'cantidad',
+    'fecha_vencimiento',
+    'precio_unitario'
+];
+
+    protected $casts = [
+        'precio_venta' => 'decimal:2',
+    ];
+
+    public function movimientos()
     {
-        $productos = Producto::with('movimientos')->get();
-        return response()->json($productos);
+        return $this->hasMany(MovimientoInventario::class, 'item_id')
+                    ->where('tipo_inventario', 'producto');
     }
 
-    public function store(Request $request)
+    public function agregarStock($cantidad, $motivo = 'Entrada manual')
     {
-        $request->validate([
-            'nombre' => 'required|string|max:255',
-            'descripcion' => 'nullable|string',
-            'precio_venta' => 'required|numeric|min:0',
-            'stock_actual' => 'nullable|integer|min:0',
-            'stock_minimo' => 'nullable|integer|min:0',
-            'unidad_medida' => 'nullable|string'
+        $this->stock_actual += $cantidad;
+        $this->save();
+
+        MovimientoInventario::create([
+            'tipo_inventario' => 'producto',
+            'item_id' => $this->id,
+            'tipo_movimiento' => 'entrada',
+            'cantidad' => $cantidad,
+            'valor_unitario' => $this->precio_venta,
+            'valor_total' => $cantidad * $this->precio_venta,
+            'motivo' => $motivo
         ]);
-
-        $producto = Producto::create($request->all());
-        return response()->json($producto, 201);
     }
 
-    public function show($id)
+    public function reducirStock($cantidad, $motivo = 'Salida manual')
     {
-        $producto = Producto::with('movimientos')->findOrFail($id);
-        return response()->json($producto);
-    }
+        if ($this->stock_actual >= $cantidad) {
+            $this->stock_actual -= $cantidad;
+            $this->save();
 
-    public function update(Request $request, $id)
-    {
-        $producto = Producto::findOrFail($id);
-        
-        $request->validate([
-            'nombre' => 'required|string|max:255',
-            'descripcion' => 'nullable|string',
-            'precio_venta' => 'required|numeric|min:0',
-            'stock_actual' => 'nullable|integer|min:0',
-            'stock_minimo' => 'nullable|integer|min:0',
-            'unidad_medida' => 'nullable|string'
-        ]);
+            MovimientoInventario::create([
+                'tipo_inventario' => 'producto',
+                'item_id' => $this->id,
+                'tipo_movimiento' => 'salida',
+                'cantidad' => $cantidad,
+                'valor_unitario' => $this->precio_venta,
+                'valor_total' => $cantidad * $this->precio_venta,
+                'motivo' => $motivo
+            ]);
 
-        $producto->update($request->all());
-        return response()->json($producto);
-    }
-
-    public function destroy($id)
-    {
-        $producto = Producto::findOrFail($id);
-        $producto->delete();
-        return response()->json(['message' => 'Producto eliminado correctamente']);
-    }
-
-    public function ajustarStock(Request $request, $id)
-    {
-        $producto = Producto::findOrFail($id);
-        
-        $request->validate([
-            'tipo' => 'required|in:entrada,salida',
-            'cantidad' => 'required|integer|min:1',
-            'motivo' => 'nullable|string'
-        ]);
-
-        if ($request->tipo === 'entrada') {
-            $producto->agregarStock($request->cantidad, $request->motivo);
-        } else {
-            $success = $producto->reducirStock($request->cantidad, $request->motivo);
-            if (!$success) {
-                return response()->json(['error' => 'Stock insuficiente'], 400);
-            }
+            return true;
         }
+        return false;
+    }
 
-        return response()->json($producto->fresh());
+    public function stockBajo()
+    {
+        return $this->stock_actual <= $this->stock_minimo;
     }
 }
